@@ -5,6 +5,7 @@
                 <ul>
                     <li><a href="#osdsBubbleTab">Scatter Plot</a></li>
                     <li><a href="#osdsTreeTab">Host Tree</a></li>
+                    <li><a href="#storageBulletTab">Bullet Chart</a></li>
                 </ul>
                 <div id="osdsBubbleTab">
                     <div id="osds-bubble"></div>
@@ -19,7 +20,30 @@
                     <div id="svg-osd-tree-osd"> </div>
                     <div id="svg-osd-tree-host"> </div>
                 </div>
+                <div id="storageBulletTab"></div>
             </div>
+        </div>
+    </div>
+</script>
+
+<script type="text/x-handlebars-template" id="storage-bullet-template">
+    <div id="storage-bullet">
+        <div id="divBasic" class="row-fluid">
+            <div id="bullet-svg-def"></div>
+            <ul id="hosts" class="item-list">
+                {{#each hosts}}
+                <li>
+                    <div id="host-{{{this.name}}}" class="bullet-host well">
+                        <div id="host-{{{this.name}}}-svg" class="bullet-host-svg span8"></div>
+                        <div class="bullet-disks-svg span4">
+                            {{#each osds}}
+                                <div id="disk-{{{this.id}}}-svg" class="bullet-disk-svg"></div>
+                            {{/each}}
+                        </div>
+                    </div>
+                </li>
+                {{/each}}
+            </ul>
         </div>
     </div>
 </script>

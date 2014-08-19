@@ -35,7 +35,12 @@ cephOSDsView = function() {
 
     this.setOSDsTreeData = function(data) {
         this.osdsTreeData = data;
-        this.osdsTree.update(this.osdsTreeData, true);
+        if (tenantStorageDisksView.currTab == 'Host Tree') {
+            this.osdsTree.update(this.osdsTreeData, true);
+        } else if (tenantStorageDisksView.currTab == 'Bullet Chart') {
+            populateStorageBullets();
+        } else {
+        }
         /*
          if(!treeRoot) {
          treeRoot = true;
@@ -290,6 +295,12 @@ cephOSDsView = function() {
                 updateStorageCharts.refreshView('#diskActivityThrptChart');
             if(tenantStorageChartsInitializationStatus['iopsChart'])
                 updateStorageCharts.refreshView('#diskActivityIopsChart');
+        } else if (selTab == 'Bullet Chart') {
+            if(tenantStorageChartsInitializationStatus['hostBulletChart']) {
+                populateStorageBullets();
+            } else {
+                getOSDsTree();
+            }
         }
     }
 
@@ -926,26 +937,33 @@ function parseOSDsTreeData(data) {
         hostColorArr = []
     hostStatusArr = [];
 
-    root.children = root.hosts;
-
-    $.each(root.children, function(idx, host) {
+    $.each(root['hosts'], function(idx, host) {
         osdColorArr = [];
         osdStatusArr = [];
-        host.children = host.osds;
-        $.each(host.children, function(idx, osd) {
-            osd.color = getOSDColor(osd);
-            osdColorArr.push(osd.color);
-            osdStatusArr.push(osd.status);
-            osdStatusArr.push(osd.cluster_status);
+        host['kb_total'] = 0;
+        host['kb_used'] = 0;
+        $.each(host['osds'], function(idx, osd) {
+            if (osd.hasOwnProperty('kb') && osd.hasOwnProperty('kb_used')) {
+                host['kb_total'] += osd['kb'];
+                host['kb_used'] += osd['kb_used'];
+                osd['used_perc'] = calcPercent(osd['kb_used'], osd['kb']);
+            }
+            osd['color'] = getOSDColor(osd);
+            osdColorArr.push(osd['color']);
+            osdStatusArr.push(osd['status']);
+            osdStatusArr.push(osd['cluster_status']);
         });
-        host.color = getHostColor(osdColorArr);
-        hostColorArr.push(host.color);
-        host.status = getHostStatus(osdStatusArr);
-        hostStatusArr.push(host.status);
+        host['osds_total'] = formatBytes(host['kb_total'] * 1024);
+        host['osds_used'] = formatBytes(host['kb_used'] * 1024);
+        host['children'] = host['osds'];
+        host['color'] = getHostColor(osdColorArr);
+        hostColorArr.push(host['color']);
+        host['status'] = getHostStatus(osdStatusArr);
+        hostStatusArr.push(host['status']);
     });
-
-    root.color = getHostColor(hostColorArr);
-    root.status = getHostStatus(hostStatusArr);
+    root['children'] = root['hosts'];
+    root['color'] = getHostColor(hostColorArr);
+    root['status'] = getHostStatus(hostStatusArr);
     tenantStorageDisksView.setOSDsTreeData(root);
 }
 
@@ -1271,6 +1289,163 @@ function osdTree() {
     }
 }
 
+function populateStorageBullets() {
+    var hostsBulletInfo = tenantStorageDisksView.osdsTreeData,
+        bulletBodyTemplate = Handlebars.compile($("#storage-bullet-template").html());
+
+    if (!$("#storageBulletTab > div").is(':visible'))
+        $('#storageBulletTab').html(bulletBodyTemplate(hostsBulletInfo));
+
+    var showTooltip = function(e, offsetElement) {
+        var left = e.pos[0] + 35, //+ ( offsetElement.offsetLeft || 0 ),
+            top = e.pos[1] , //+ ( offsetElement.offsetTop || 0),
+            content = bulletChartTooltipFn(e['key'], null, null, e, {type: 'disk'}, tenantStorageChartUtils.diskBulletTooltipFn);
+
+        nv.tooltip.show([left, top], content, 'n', 10, offsetElement);
+    };
+
+    if ($('#bullet-svg-def > svg').is(':visible')) {
+        $('#bullet-svg-def svg defs').empty();
+        svgdef = d3.select('#bullet-svg-def svg defs');
+    } else {
+        svgdef = d3.select('#bullet-svg-def').append('svg')
+            .append("svg:defs");
+    }
+
+    /*
+    Linear Gradient for each disks needs to be added to the defs.
+    this will be referred later in each hosts svg section.
+     */
+    $.each(hostsBulletInfo.hosts, function(idx, host){
+        $.each(host.osds, function(idx, osd){
+            var disk_points = "M14.8738636,12.5978448 C6.40334966,12.5978446 2.93659091,11.1422414 0.0272727273," +
+                "8.88376437 L0.0272727273,39.0610632 C0.185454545,39.7540948 1.60295455,40.6510057 3.58295455," +
+                "41.4688937 C6.25977273,42.456681 10.3868182,43.2635057 15.8475,43.2635057 C25.8259091," +
+                "43.2635057 29.9747727,40.4471264 29.9747727,38.9354167 L29.9965909,8.88376437 C28.44," +
+                "10.1449713 23.3443776,12.597845 14.8738636,12.5978448 Z";
+            var disk_top = "M14.9822469,0.365876437 C18.0630348,0.365876437 20.6955219,0.649568966 22.8599204," +
+                "1.10553161 C27.4978197,2.05775862 29.9713204,3.7045977 29.9713204,4.71530172 C29.9713204," +
+                "5.72442529 27.4978197,7.38390805 22.8599204,8.33929598 C20.6955219,8.78261494 18.0630348," +
+                "9.07737069 14.9822469,9.07737069 C5.29294732,9.07737069 0.00409090909,6.19303161 0.00409090909," +
+                "4.71530172 C0.00409090909,3.23994253 5.29294732,0.365876437 14.9822469,0.365876437 L14.9822469," +
+                "0.365876437 Z";
+            var top_band = "M29.9525576,4.71530172 L29.9525587,7.13521315 C29.4241496,8.14275625 26.9065899," +
+                "9.70560345 22.8422719,10.5400862 C20.6795447,10.9834052 18.0490902,11.2813218 14.9706813," +
+                "11.2813218 C5.28886344,11.2813218 0.00409090909,8.39698276 0.00409090909,6.91925287 L0.00409090909," +
+                "4.71530172 C0.00409090909,6.19224138 5.28886344,9.07737069 14.9706813,9.07737069 C18.0490902," +
+                "9.07737069 20.6795447,8.78261494 22.8422719,8.33929598 C26.9065899,7.50244253 29.4234667," +
+                "5.92564374 29.9525576,4.91810064";
+            var bottom_band = "M29.9525598,42.0518743 C29.9525598,42.0518743 28.8615842,43.3362543 26.2952014," +
+                "44.2037355 C23.8400917,45.0336044 19.466348,45.6379395 15.8867184,45.6379395 C12.5861819," +
+                "45.6379395 9.14296661,45.22904 6.11969872,44.4757488 C2.43652569,43.5580327 0.00409090909," +
+                "41.7572542 0.00409090909,41.7370606 L0.00409090909,39.0486351 C0.00409090909,39.2282446 29.9525598," +
+                "39.0486351 29.9525598,39.0486351 C29.9525581,39.9836021 29.9525598,42.0518743 29.9525598,42.0518743 Z";
+
+            /*
+            Name of Host which OSD is on is required for the drillDown on click event
+             */
+            osd['host'] = host['name'];
+
+            var gradient = svgdef.append("svg:linearGradient")
+                .attr("id", "lg-" + osd['name'])
+                .attr("x1", "0%")
+                .attr("y1", "100%")
+                .attr("x2", "0%")
+                .attr("y2", "0%")
+                .attr("spreadMethod", "pad");
+
+            gradient.append("svg:stop")
+                .attr("offset", osd['used_perc'] + '%')
+                .attr("stop-color", "steelblue")
+                .attr("stop-opacity", '.8');
+
+            gradient.append("svg:stop")
+                .attr("offset", "0%")
+                .attr("stop-color", "#9AC2DD");
+
+            if ($('#disk-' + osd['id'] + '-svg > svg').is(':visible')) {
+                $('#disk-' + osd['id'] + '-svg svg').empty();
+                var container = d3.select('#disk-' + osd['id'] + '-svg svg');
+            } else {
+                var container = d3.select('#disk-' + osd['id'] + '-svg').append('svg');
+            }
+
+            var disk_svg = container.datum(osd)
+                .on('mouseover', function() {
+                    var currObj = d3.select(this).data()[0];
+                    showTooltip({
+                        pos: [d3.event.pageX, d3.event.pageY],
+                        key: currObj['name'],
+                        value: currObj['used_perc'],
+                        point: currObj
+                    });
+                })
+                .on('mouseout', function() {
+                    nv.tooltip.cleanup();
+                })
+                .on('click', function() {
+                    var currObj = d3.select(this).data()[0];
+                    tenantStorageChartUtils.onDiskDrillDown(currObj);
+
+                })
+                .append('g')
+                .attr("transform", "translate(2, 1)");
+
+            disk_svg.append('path')
+                .attr('d', disk_points)
+                .style('stroke', '#D1D1D1')
+                .style('stroke-width', 1)
+                .style('fill', 'url(#lg-' + osd['name'] + ')');
+
+            disk_svg.append('path')
+                .attr('d', disk_top)
+                .style('stroke', '#D1D1D1')
+                .style('stroke-width', 1)
+                .style('fill', function(){
+                    return getOSDColor(osd);
+                });
+
+            disk_svg.append('path')
+                .attr('d', top_band)
+                .style('fill', '#6D6F71');
+
+            /*disk_svg.append('path')
+                .attr('d', bottom_band)
+                .style('fill', '#D1D1D1');
+            */
+        });
+    });
+
+    /*
+    bullet chart for host
+     */
+    $.ajax({
+        url: tenantMonitorStorageUrls['CLUSTER_USAGE']
+    }).done(function(response){
+        var full_ratio = parseFloat(response['usage_summary']['osd_summary']['full_ratio']);
+        var near_full_ratio = parseFloat(response['usage_summary']['osd_summary']['near_full_ratio']);
+        $.each(hostsBulletInfo.hosts, function(idx, host){
+            var ranges = [host['kb_total'] * near_full_ratio, host['kb_total'] * full_ratio, host['kb_total']];
+            ranges = $.map(ranges, function(val, idx){
+                return val * 1024;
+            });
+            var formattedRanges = formatByteArray({values: ranges});
+            ranges = formattedRanges['values'];
+
+            var data = {
+                title: host['name'],
+                subtitle: 'Usage in (' + formattedRanges['unit'] + ')',
+                unit: formattedRanges['unit'],
+                ranges: ranges,
+                measures:[prettifyBytes({bytes: host['kb_used'] * 1024, stripUnit: true, prefix: formattedRanges['unit']})],
+                markers: [ranges[1]]
+            };
+            updateStorageCharts.updateBulletCharts(data, 'hostBulletChart');
+
+        });
+    });
+}
+
 /* experimental
 function jointTree () {
     var graph = new joint.dia.Graph;
@@ -1304,7 +1479,7 @@ function jointTree () {
 function OSDsDataRefresh() {
     if (tenantStorageDisksView.currTab == 'Scatter Plot') {
         getOSDs();
-    } else if (tenantStorageDisksView.currTab == 'Host Tree') {
+    } else if (tenantStorageDisksView.currTab == 'Host Tree' || tenantStorageDisksView.currTab == 'Bullet Chart') {
         getOSDsTree();
     } else {
 

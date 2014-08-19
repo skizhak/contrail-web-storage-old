@@ -214,6 +214,49 @@ var tenantStorageChartUtils = {
             value: e.point.value
         }];
         return tooltipContents;
+    },
+    hostBulletTooltipFn: function(key, currObj) {
+        var tooltipContents = [{
+            lbl: 'Name',
+            value: currObj['key'].split(':')[0]
+        }, {
+            lbl: 'Label',
+            value: currObj['label'].split(':')[0]
+        }, {
+            lbl: 'Value',
+            value: currObj['value'] + currObj['label'].split(':')[1]
+        }];
+        return tooltipContents;
+    },
+    diskBulletTooltipFn: function(key, e) {
+        var d = e['point'];
+        var tooltipContents = [{
+            lbl: 'Name',
+            value: e['key']
+        }, {
+            lbl: 'Used',
+            value: e['value'] + '%'
+        }, {
+            lbl: 'Status',
+            value: (function() {
+                return getDiskStatusTmpl(d['status'])
+            })()
+        }, {
+            lbl: 'Membership',
+            value: (function() {
+                return getDiskStatusTmpl(d['cluster_status'])
+            })()
+        }, {
+            lbl: 'IP Address',
+            value: d['cluster_addr']
+        }, {
+            lbl: 'UUID',
+            value: d['uuid']
+        }];
+        return tooltipContents;
+    },
+    tickFormatByteFormatFn: function(d) {
+       return formatBytes(d).split(' ')[0];
     }
 }
 
@@ -359,6 +402,32 @@ function formatTreeLblValueTooltip(infoObj) {
     return tooltipTemplate(infoObj);
 }
 
+function formatByteArray(data) {
+    var toFormat = '',unit = '';
+    var dValues = data['values'];
+
+    dValues = flattenList(dValues);
+    yMaxMin = $.map(d3.extent(dValues), function (val, idx) {
+        return formatBytes(val);
+    });
+    if (yMaxMin[0].split(' ')[1] == yMaxMin[1].split(' ')[1]) {
+        toFormat = yMaxMin[0].split(' ')[1];
+    } else {
+        toFormat = yMaxMin[1].split(' ')[1];
+    }
+    data['origValues'] = data['values'];
+
+    data['values'] = $.map(data['values'], function (val, idx) {
+        return prettifyBytes({bytes:val, stripUnit:true, prefix:toFormat});
+    });
+
+    if (toFormat != null) {
+        unit += toFormat;
+    }
+    data['unit'] = unit;
+    return data;
+}
+
 function isStorageChartInitialized(selector) {
     if ($(selector + ' > svg').length > 0)
         return true;
@@ -385,9 +454,32 @@ function lineChartTooltipFn(key, x, y, e, chart, tooltipFormatFn) {
     return formatLblValueTooltip(tooltipContents);
 }
 
+function bulletChartTooltipFn(key, x, y, e, chart, tooltipFormatFn) {
+    var tooltipContents = [];
+    var formatLblValueFn =  formatSmallLblValueTooltip;
+    if (typeof(tooltipFormatFn) == 'function') {
+        tooltipContents = tooltipFormatFn(key, e);
+    }
+    if (chart.hasOwnProperty('type')) {
+       if (chart['type'] == 'disk') {
+           //Format the alerts to display in tooltip
+           $.each(ifNull(e['point']['alerts'], []), function(idx, obj) {
+               if (obj['tooltipAlert'] != false)
+                   tooltipContents.push({
+                       lbl: ifNull(obj['tooltipLbl'], 'Events'),
+                       value: obj['msg']
+                   });
+           });
+           formatLblValueFn = formatTreeLblValueTooltip;
+           //return formatTreeLblValueTooltip(tooltipContents);
+       }
+    }
+   return formatLblValueFn(tooltipContents);
+}
+
 var updateStorageCharts = {
     updateView: function(obj) {
-        if (obj['type'] == 'storageActivityLineChart') {
+        if (obj['type'] == 'storageActivityLineChart' || obj['type'] == 'storageBulletChart') {
             if (obj['selector'] != null && $(obj['selector']).parent('div') != null) {
                 var chart = $(obj['selector']).parent('div').data('chart');
                 d3.select(obj['selector']).datum(obj['data']);
@@ -488,6 +580,38 @@ var updateStorageCharts = {
             chartObj['type'] = 'storageActivityLineChart';
             updateStorageCharts.updateView(chartObj);
         }
+    },
+    updateBulletCharts: function(data, chartId){
+        var chartObj = {},
+            selector;
+        if (chartId == 'hostBulletChart') {
+            /*
+            passing unit along with labels so that later it can be used while tooltips are generated.
+            currently there is no easier way to identify to which unit range values are converted at tooltip data.
+            for now will look for split(':')[1] to get unit.
+             */
+            data['measureLabels'] = ['Used : ' + data['unit']];
+            data['rangeLabels'] = $.map(['Full Ratio', 'Near Full Ratio', 'Normal Ratio'], function(lbl, idx) {
+                return lbl + ' : ' + data['unit'];
+            });
+            data['markerLabels'] = ['Ingestion Stop Limit : ' + data['unit']];
+            var chartsData = {
+              d: data,
+              chartOptions: {
+                tooltipFn: tenantStorageChartUtils.hostBulletTooltipFn
+              }
+            };
+            selector = '#host-' + data['title'] + '-svg';
+        }
+        if (!isStorageChartInitialized(selector)) {
+            $(selector).storageBulletChart(chartsData);
+            tenantStorageChartsInitializationStatus[chartId] = true;
+        } else {
+            chartObj['selector'] = $('#content-container').find(selector + ' > svg').first()[0];
+            chartObj['data'] = data;
+            chartObj['type'] = 'storageBulletChart';
+            updateStorageCharts.updateView(chartObj);
+        }
     }
 };
 
@@ -535,6 +659,41 @@ var updateStorageCharts = {
 
                 $(selector).data('chart', chart);
                 $(selector).append('<svg></svg>');
+
+                d = ifNull(data['d'], []);
+
+                if (!($(selector).is(':visible'))) {
+                    $(selector).find('svg').bind("refresh", function() {
+                        d3.select($(selector)[0]).select('svg').datum(d).call(chart);
+                    });
+                } else {
+                    d3.select($(selector)[0]).select('svg').datum(d).call(chart);
+                }
+
+                nv.utils.windowResize(function() {
+                    updateChartOnResize(selector, chart);
+                });
+
+                return chart
+            });
+        },
+        storageBulletChart: function(data) {
+            var selector = $(this),
+                chartOptions = ifNull(data['chartOptions'], {});
+
+            nv.addGraph(function() {
+                chart = nv.models.bulletChart();
+
+                $(selector).data('chart', chart);
+                $(selector).append('<svg></svg>');
+
+                var tooltipFn = ifNull(chartOptions['tooltipFn'], function(){ return});
+                chartOptions['tooltipFn'] = function(key, x, y, e, graph) {
+                    return bulletChartTooltipFn(key, x, y, e, graph, tooltipFn);
+                }
+                chart.tooltipContent(chartOptions['tooltipFn']);
+
+                chart.tickFormat(ifNull(chartOptions['tickFormatFn'], tenantStorageChartUtils.tickFormatByteFormatFn))
 
                 d = ifNull(data['d'], []);
 

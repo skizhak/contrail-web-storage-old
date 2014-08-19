@@ -370,7 +370,51 @@
     display: inline;
     margin-top: -10px;
 }
-
+#storage-bullet li {
+    border-bottom: none !important;
+}
+#storage-bullet .well {
+    background-color: #FFFFFF;
+}
+#bullet-svg-def {
+    height: 0px;
+}
+.bullet-host-svg svg {
+    height: 60px;
+}
+.bullet-host-svg rect:hover {
+    stroke: #5A5A5A;
+    stroke-opacity: 0.2;
+    fill-opacity: 0.8 !important;
+    stroke-width: 3px;
+}
+.bullet-disks-svg {
+    float: none !important;
+    overflow: hidden;
+}
+.bullet-disk-svg {
+    float: left;
+    height: 65px;
+    width: 40px;
+}
+.bullet-disk-svg svg {
+    height: 58px;
+    width: 35px;
+}
+.bullet-disk-svg svg:hover {
+    stroke: #5A5A5A;
+    stroke-opacity: 0.5;
+    stroke-width: 3px;
+}
+.bullet-host-svg .nv-marker { stroke: #000; stroke-width: 2px; }
+.bullet-host-svg .nv-tick line { stroke: #666; stroke-width: .5px; }
+.bullet-host-svg .nv-range { fill: none !important;}
+.bullet-host-svg .nv-rangeAvg { fill: #D1D1D1 !important; }
+.bullet-host-svg .nv-rangeMax { fill: #ddd !important; }
+.bullet-host-svg .nv-rangeMin { fill: #ccc !important; }
+.bullet-host-svg .nv-measure { fill: steelblue; }
+.bullet-host-svg .nv-title { font-size: 10px; fill: #3182B6; font-weight: 500 }
+.bullet-host-svg .nv-subtitle { fill: #999; }
 /*
 #usage-gauge-container {
     background: transparent url("/img/kendo/gauge-container.png") no-repeat 50% 50%;

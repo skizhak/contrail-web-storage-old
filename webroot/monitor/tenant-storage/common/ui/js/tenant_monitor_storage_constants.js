@@ -15,7 +15,8 @@ var tenantStorageChartsInitializationStatus = {
     host_tree: false,
     thrptChart: false,
     iopsChart: false,
-    latencyChart: false
+    latencyChart: false,
+    hostBulletChart: false
 };
 
 var disksTabs = ['Scatter Plot', 'Host Tree', 'Details'];
